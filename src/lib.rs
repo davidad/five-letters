@@ -1,7 +1,7 @@
 use bitvec::prelude::*;
-use itertools::*;
+use itertools::{*, EitherOrBoth::*};
 use std::{cell::RefCell, fs::File, io::{BufRead, BufReader}, rc::Rc};
-use tqdm::*;
+use kdam::prelude::*;
 
 type WordBits = BitArray<[u32;1],Msb0>;
 
@@ -32,22 +32,39 @@ pub fn remove_anagrams(wbs: (Vec<String>, Vec<WordBits>)) -> (Vec<String>, Vec<W
     words.into_iter().zip(bits.iter()).unique_by(|(_,b)| b.clone()).unzip()
 }
 
+pub fn intersect_with(wbs: (Vec<String>, Vec<WordBits>), filename: &str) -> (Vec<String>, Vec<WordBits>) {
+    let others = sorted(BufReader::new(File::open(filename).unwrap())
+        .lines()
+        .map(|line| line.unwrap())
+        .filter(|word| word.chars().count() == 5));
+
+    let (words, bits) = wbs;
+    words.into_iter().zip(bits.iter()).merge_join_by(others, |(w,_),o| w.cmp(o))
+        .filter_map(|m| match m {
+            Left(_) => None,
+            Right(_) => None,
+            Both((w,b),_) => Some((w,b))
+        })
+        .unzip()
+}
+
 pub fn generate_neighborhoods(bits: &Vec<WordBits>) -> Vec<BitVec> {
     let n = bits.len();
     let mut result = vec![bitvec![0;n]; n];
-    for x in tqdm(0..n) {
+    for x in tqdm!(0..n) {
         for y in (x+1)..n {
             if (bits[x] & bits[y]).not_any() {
                 result[x].set(y, true);
             }
         }
     }
+    eprint!("\n");
     result
 }
 
 pub fn find_cliques(neighborhoods: Vec<BitVec>) -> Vec<[u16;5]> {
     let mut result : Vec<[u16;5]> = Vec::new();
-    for (i,xs) in tqdm(neighborhoods.iter().enumerate().rev().skip(4)) {
+    for (i,xs) in tqdm!(neighborhoods.iter().enumerate().rev().skip(4)) {
         let remaining = xs;
         for j in remaining.iter_ones() {
             let remaining = remaining.clone() & &neighborhoods[j];
@@ -64,6 +81,7 @@ pub fn find_cliques(neighborhoods: Vec<BitVec>) -> Vec<[u16;5]> {
             }
         }
     }
+    eprint!("\n");
     result
 }
 
@@ -219,7 +237,7 @@ impl DancingLinks {
         let mut results : Vec<[u16;5]> = Vec::new();
         let mut x : [u16;6] = [0; 6];
         
-        fn recurse(o: &mut DancingLinks, results: &mut Vec<[u16;5]>, x: &mut [u16;6], mut progress: Option<Rc<RefCell<dyn Iterator<Item=usize>>>>, l : usize) {
+        fn recurse(o: &mut DancingLinks, results: &mut Vec<[u16;5]>, x: &mut [u16;6], mut progress: Option<Rc<RefCell<kdam::Bar>>>, l : usize) {
             let mut n_cols = 0;
             let mut min_k : isize = isize::MAX;
             let mut argmin_k = 0;
@@ -241,13 +259,16 @@ impl DancingLinks {
                 }).filter(|i| *i < (o.n-26) as u16).collect::<Vec<_>>().try_into().unwrap());
             } else {
                 if l == 0 {
-                    progress = Some(Rc::new(RefCell::new(tqdm(0..(min_k as usize))))); 
+                    progress = Some(Rc::new(RefCell::new(kdam::Bar::new(min_k as usize)))); 
                 }
                 let i = argmin_k;
                 o.cover(i);
                 x[l] = i as u16;
                 while {x[l] = o.dlink[x[l] as usize] as u16; x[l] as usize != i} {
-                    if l==0 { progress.clone().unwrap().borrow_mut().next(); }
+                    if l==0 {
+                        let p = progress.clone().unwrap();
+                        p.borrow_mut().update(1); p.borrow_mut().refresh();
+                    }
                     {
                         if (x[l] as usize) > o.appendix {
                             o.hide_appendix();
@@ -285,6 +306,7 @@ impl DancingLinks {
         }
         
         recurse(self, &mut results, &mut x, None, 0);
+        eprint!("\n");
         results
     }
 }
@@ -295,7 +317,7 @@ pub fn init_dancing_links(wb: &Vec<WordBits>) -> DancingLinks {
     let k : usize = wb.iter().map(|w| w.count_ones()).sum();
 
     let mut d = DancingLinks::new(n+26,m,k+26);
-    for w in tqdm(wb.iter()) {
+    for w in tqdm!(wb.iter()) {
         d.add_spacer();
         for k in w.iter_ones() {
             d.add_node(k as u16);
@@ -307,6 +329,8 @@ pub fn init_dancing_links(wb: &Vec<WordBits>) -> DancingLinks {
         d.add_node(c as u16);
     }
     d.finalize();
+
+    eprint!("\n");
 
     d
 }
