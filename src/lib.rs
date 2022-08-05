@@ -1,4 +1,5 @@
 use bitvec::prelude::*;
+use get_size::GetSize;
 use itertools::{*, EitherOrBoth::*};
 use std::{cell::RefCell, fs::File, io::{BufRead, BufReader}, rc::Rc};
 use kdam::prelude::*;
@@ -83,7 +84,7 @@ pub fn find_cliques(neighborhoods: Vec<BitVec>) -> Vec<[u16;5]> {
     result
 }
 
-#[derive(Clone)]
+#[derive(Clone, GetSize)]
 pub struct DancingLinks {
     llink : Vec<u16>,
     rlink : Vec<u16>,
@@ -326,6 +327,8 @@ pub fn init_dancing_links(wb: &Vec<WordBits>) -> DancingLinks {
         d.add_node(c as u16);
     }
     d.finalize();
+
+    println!("Heap size of dancing links: {} bytes.", d.get_heap_size());
 
     d
 }

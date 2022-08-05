@@ -8,6 +8,7 @@ edition = "2021"
 [dependencies]
 bitvec = "1.0.1"
 criterion = {version = "0.3.6", features = ["html_reports"]}
+get-size = { version = "0.1.1", features = ["derive"] }
 itertools = "0.10.3"
 kdam = "0.2.2"
 
