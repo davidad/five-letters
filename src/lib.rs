@@ -310,3 +310,15 @@ pub fn init_dancing_links(wb: &Vec<WordBits>) -> DancingLinks {
 
     d
 }
+
+pub fn fmt_solutions(words: &Vec<String>, solutions: Vec<[u16;5]>) -> String {
+    Itertools::intersperse(
+        solutions.iter().map(|solution| {
+            Itertools::intersperse(
+                solution.iter()
+                .map(|i| words[*i as usize].clone()),
+                "\t".to_string())
+                .collect::<String>()
+        }),
+        "\n".to_string()).collect::<String>()
+}

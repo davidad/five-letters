@@ -6,3 +6,11 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+bitvec = "1.0.1"
+criterion = {version = "0.3.6", features = ["html_reports"]}
+itertools = "0.10.3"
+tqdm = "0.4.0"
+
+[[bench]]
+name = "bench"
+harness = false
