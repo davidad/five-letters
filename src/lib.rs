@@ -58,7 +58,6 @@ pub fn generate_neighborhoods(bits: &Vec<WordBits>) -> Vec<BitVec> {
             }
         }
     }
-    eprint!("\n");
     result
 }
 
@@ -81,7 +80,6 @@ pub fn find_cliques(neighborhoods: Vec<BitVec>) -> Vec<[u16;5]> {
             }
         }
     }
-    eprint!("\n");
     result
 }
 
@@ -306,7 +304,6 @@ impl DancingLinks {
         }
         
         recurse(self, &mut results, &mut x, None, 0);
-        eprint!("\n");
         results
     }
 }
@@ -329,8 +326,6 @@ pub fn init_dancing_links(wb: &Vec<WordBits>) -> DancingLinks {
         d.add_node(c as u16);
     }
     d.finalize();
-
-    eprint!("\n");
 
     d
 }
