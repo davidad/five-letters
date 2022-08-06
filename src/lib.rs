@@ -1,7 +1,8 @@
 use bitvec::prelude::*;
+use crossbeam::queue::SegQueue;
 use get_size::GetSize;
 use itertools::{*, EitherOrBoth::*};
-use std::{cell::RefCell, fs::File, io::{BufRead, BufReader}, rc::Rc};
+use std::{fs::File, io::{BufRead, BufReader}, sync::Arc, thread};
 use kdam::prelude::*;
 
 type WordBits = BitArray<[u32;1],Msb0>;
@@ -233,10 +234,10 @@ impl DancingLinks {
     }
 
     pub fn solve(&mut self) -> Vec<[u16;5]> {
-        let mut results : Vec<[u16;5]> = Vec::new();
+        let results : Arc<SegQueue<[u16;5]>> = Arc::new(SegQueue::new());
         let mut x : [u16;6] = [0; 6];
         
-        fn recurse(o: &mut DancingLinks, results: &mut Vec<[u16;5]>, x: &mut [u16;6], mut progress: Option<Rc<RefCell<kdam::Bar>>>, l : usize) {
+        fn recurse(o: &mut DancingLinks, results: &Arc<SegQueue<[u16;5]>>, x: &mut [u16;6], l : usize, par : bool) {
             let mut n_cols = 0;
             let mut min_k : isize = isize::MAX;
             let mut argmin_k = 0;
@@ -257,17 +258,10 @@ impl DancingLinks {
                     -o.top[j as usize] as u16
                 }).filter(|i| *i < (o.n-26) as u16).collect::<Vec<_>>().try_into().unwrap());
             } else {
-                if l == 0 {
-                    progress = Some(Rc::new(RefCell::new(kdam::Bar::new(min_k as usize)))); 
-                }
                 let i = argmin_k;
                 o.cover(i);
-                x[l] = i as u16;
-                while {x[l] = o.dlink[x[l] as usize] as u16; x[l] as usize != i} {
-                    if l==0 {
-                        let p = progress.clone().unwrap();
-                        p.borrow_mut().update(1); p.borrow_mut().refresh();
-                    }
+                let try_xl = |o: &mut DancingLinks, x: &mut [u16;6],results: &Arc<_>,xl,l| {
+                    x[l] = xl;
                     {
                         if (x[l] as usize) > o.appendix {
                             o.hide_appendix();
@@ -283,7 +277,7 @@ impl DancingLinks {
                             }
                         }
                     }
-                    recurse(o, results, x, progress.clone(), l+1);
+                    recurse(o, &results, x, l+1,false);
                     {
                         let mut p : usize = x[l] as usize - 1;
                         while x[l] as usize != p {
@@ -299,13 +293,50 @@ impl DancingLinks {
                             o.unhide_appendix();
                         }
                     }
+                };
+                if par {
+                    let nthreads : usize = thread::available_parallelism().map(|i| i.into()).unwrap_or(8);
+                    let mut starts : Vec<u16> = Vec::with_capacity(nthreads);
+                    let mut xl = i as u16;
+                    let mut a = 0;
+                    while {xl = o.dlink[xl as usize] as u16; xl as usize != i} {
+                        a += 1;
+                    }
+                    let s = a/nthreads + 1;
+                    let mut b = 0;
+                    while {xl = o.dlink[xl as usize] as u16; xl as usize != i} {
+                        b = b % s;
+                        if b == 0 { starts.push(xl); }
+                        b += 1;
+                    }
+                    let mut threads = Vec::with_capacity(nthreads);
+                    for t in 0..nthreads {
+                        let mut o = o.clone();
+                        let mut x = x.clone();
+                        let results = results.clone();
+                        let mut xl = starts[t];
+                        threads.push(thread::spawn(move || {
+                            let mut a = 0;
+                            while (xl as usize != i) && a < s {
+                                try_xl(&mut o,&mut x,&results,xl,l);
+                                xl = o.dlink[xl as usize] as u16;
+                                a += 1;
+                            }
+                        }));
+                    }
+                    for t in threads { t.join().unwrap(); }
+                } else {
+                    let mut xl = i as u16;
+                    while {xl = o.dlink[xl as usize] as u16; xl as usize != i} {
+                        try_xl(o, x, results, xl, l);
+                    }
                 }
                 o.uncover(i);
             }
         }
         
-        recurse(self, &mut results, &mut x, None, 0);
-        results
+        recurse(self, &results, &mut x, 0, true);
+        Arc::try_unwrap(results).unwrap().into_iter().collect()
     }
 }
 
