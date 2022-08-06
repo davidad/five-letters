@@ -11,10 +11,10 @@ pub fn load(filename: &str) -> (Vec<String>, Vec<WordBits>) {
         .lines()
         .map(|line| line.unwrap())
         .filter(|word| word.chars().count() == 5))
+        .map(|word| word.to_lowercase())
         .filter_map(|word| {
             let mut b = bitarr![u32, Msb0; 0; 26];
             let indices = word.chars()
-                .flat_map(|c| c.to_lowercase())
                 .map(|c| {
                     assert!(c.is_ascii_lowercase());
                     (c as u8 - b'a') as usize
@@ -328,7 +328,7 @@ pub fn init_dancing_links(wb: &Vec<WordBits>) -> DancingLinks {
     }
     d.finalize();
 
-    println!("Heap size of dancing links: {} bytes.", d.get_heap_size());
+    eprint!("Heap size of dancing links: {} bytes.", d.get_heap_size());
 
     d
 }
