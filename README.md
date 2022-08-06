@@ -1,4 +1,4 @@
-# The Five-Letter Problem in 0.8 Seconds
+# The Five-Letter Problem in 0.45 Seconds
 
 @davidad, _August 2022_
 
