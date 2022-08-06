@@ -32,9 +32,13 @@ I took Paassen's exact algorithmic strategy and implemented it in a performant m
 
 But then I pulled out my copy of [Volume 4B, Fascicle 5](https://blackwells.co.uk/bookshop/product/The-Art-of-Computer-Programming-Volume-4B-Fascicle-5-Mathematical-Preliminaries-Redux-Backtracking-Dancing-Links-by-Donald-Ervin-Knuth/9780134671796) of [Donald Knuth](https://en.wikipedia.org/wiki/Donald_Knuth)'s [The Art of Computer Programming](https://en.wikipedia.org/wiki/The_Art_of_Computer_Programming) and implemented [Knuth's Algorithm X](https://en.wikipedia.org/wiki/Knuth%27s_Algorithm_X) (that's its actual name!) with his [Dancing Links](https://en.wikipedia.org/wiki/Dancing_Links) optimizations.
 
-Using Algorithm X, the entire solution benchmarks under **0.795 s**:
+Using Algorithm X, the entire solution benchmarks under **0.795 s** single-threaded:
 
 ![Benchmark plot showing median 790.96 ms](./doc/img/dancing_links_report.png)
+
+I haven't worked out a great way to parallelize this yet, but over on the [par branch](https://github.com/davidad/five-letters/tree/par) I have a version that gets down under **0.45 s** multi-threaded:
+
+![Benchmark plot showing median 443.32 ms](./doc/img/parallel_dancing_links_report.png)
 
 ## How does it work?
 
