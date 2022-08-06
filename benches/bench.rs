@@ -49,11 +49,11 @@ pub fn bench_dancing_links(c: &mut Criterion) {
     g.sampling_mode(SamplingMode::Flat);
     g.sample_size(10);
     g.measurement_time(Duration::from_secs(25));
-    g.bench_function("dancing end-to-end solution", |b| b.iter(|| {
+    g.bench_function("parallel dancing end-to-end solution", |b| b.iter(|| {
         let (words, bits) = remove_anagrams(load(FILENAME));
         let mut dancing_links = init_dancing_links(&bits);
-        let solutions = dancing_links.solve();
-        fmt_solutions(&words, solutions)
+        let solutions = dancing_links.solve().into_iter();
+        fmt_solutions(&words, Box::new(solutions))
     }));
     g.finish();
 }
@@ -66,8 +66,8 @@ pub fn bench_clique_search(c: &mut Criterion) {
     g.bench_function("end-to-end solution", |b| b.iter(|| {
         let (words, bits) = remove_anagrams(load(FILENAME));
         let neighborhoods = generate_neighborhoods(&bits);
-        let solutions = find_cliques(neighborhoods);
-        fmt_solutions(&words, solutions)
+        let solutions = find_cliques(neighborhoods).into_iter();
+        fmt_solutions(&words, Box::new(solutions))
     }));
     g.finish();
 }

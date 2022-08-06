@@ -30,19 +30,19 @@ fn main() {
     let n = words.len();
     assert!(n <= u16::MAX.into());
     
-    let solutions =
+    let solutions : Box<dyn Iterator<Item=[u16;5]>>=
         if args.clique_search {
             let neighborhoods = generate_neighborhoods(&bits);
             eprint!("\n");
             let solutions = find_cliques(neighborhoods);
             eprint!("\n");
-            solutions
+            Box::new(solutions.into_iter())
         } else {
             let mut dancing_links = init_dancing_links(&bits);
             eprint!("\n");
             let solutions = dancing_links.solve();
             eprint!("\n");
-            solutions
+            Box::new(solutions.into_iter())
         };
 
     println!("{}", fmt_solutions(&words, solutions));

@@ -1,5 +1,5 @@
 use bitvec::prelude::*;
-use crossbeam::queue::SegQueue;
+use crossbeam::queue::{ArrayQueue, SegQueue};
 use get_size::GetSize;
 use itertools::{*, EitherOrBoth::*};
 use std::{fs::File, io::{BufRead, BufReader}, sync::Arc, thread};
@@ -8,10 +8,10 @@ use kdam::prelude::*;
 type WordBits = BitArray<[u32;1],Msb0>;
 
 pub fn load(filename: &str) -> (Vec<String>, Vec<WordBits>) {
-    let (words, bits) : (Vec<_>, Vec<_>) = sorted(BufReader::new(File::open(filename).unwrap())
+    let (words, bits) : (Vec<_>, Vec<_>) = BufReader::new(File::open(filename).unwrap())
         .lines()
         .map(|line| line.unwrap())
-        .filter(|word| word.chars().count() == 5))
+        .filter(|word| word.chars().count() == 5)
         .map(|word| word.to_lowercase())
         .filter_map(|word| {
             let mut b = bitarr![u32, Msb0; 0; 26];
@@ -233,7 +233,7 @@ impl DancingLinks {
         }
     }
 
-    pub fn solve(&mut self) -> Vec<[u16;5]> {
+    pub fn solve(&mut self) -> impl IntoIterator<Item=[u16;5]> {
         let results : Arc<SegQueue<[u16;5]>> = Arc::new(SegQueue::new());
         let mut x : [u16;6] = [0; 6];
         
@@ -241,12 +241,26 @@ impl DancingLinks {
             let mut n_cols = 0;
             let mut min_k : isize = isize::MAX;
             let mut argmin_k = 0;
+            let mut max_k : isize = isize::MIN;
+            let mut argmax_k = 0;
             let mut c = 0;
+            let mut nthreads : usize = 0;
+            if par {
+                nthreads = thread::available_parallelism().map(|i| i.into()).unwrap_or(8);
+            }
             while {c = o.rlink[c] as usize; c > 0} {
                 n_cols += 1;
-                if (o.top[c] as isize) < min_k {
-                    min_k = o.top[c] as isize;
-                    argmin_k = c;
+                if !par {
+                    if (o.top[c] as isize) < min_k {
+                        min_k = o.top[c] as isize;
+                        argmin_k = c;
+                    }
+                }
+                if par {
+                    if (o.top[c] as isize) > max_k {
+                        max_k = o.top[c] as isize;
+                        argmax_k = c;
+                    }
                 }
             }
             if n_cols == 0 {
@@ -258,8 +272,6 @@ impl DancingLinks {
                     -o.top[j as usize] as u16
                 }).filter(|i| *i < (o.n-26) as u16).collect::<Vec<_>>().try_into().unwrap());
             } else {
-                let i = argmin_k;
-                o.cover(i);
                 let try_xl = |o: &mut DancingLinks, x: &mut [u16;6],results: &Arc<_>,xl,l| {
                     x[l] = xl;
                     {
@@ -294,49 +306,44 @@ impl DancingLinks {
                         }
                     }
                 };
-                if par {
-                    let nthreads : usize = thread::available_parallelism().map(|i| i.into()).unwrap_or(8);
-                    let mut starts : Vec<u16> = Vec::with_capacity(nthreads);
-                    let mut xl = i as u16;
-                    let mut a = 0;
-                    while {xl = o.dlink[xl as usize] as u16; xl as usize != i} {
-                        a += 1;
-                    }
-                    let s = a/nthreads + 1;
-                    let mut b = 0;
-                    while {xl = o.dlink[xl as usize] as u16; xl as usize != i} {
-                        b = b % s;
-                        if b == 0 { starts.push(xl); }
-                        b += 1;
-                    }
-                    let mut threads = Vec::with_capacity(nthreads);
-                    for t in 0..nthreads {
-                        let mut o = o.clone();
-                        let mut x = x.clone();
-                        let results = results.clone();
-                        let mut xl = starts[t];
-                        threads.push(thread::spawn(move || {
-                            let mut a = 0;
-                            while (xl as usize != i) && a < s {
-                                try_xl(&mut o,&mut x,&results,xl,l);
-                                xl = o.dlink[xl as usize] as u16;
-                                a += 1;
-                            }
-                        }));
-                    }
-                    for t in threads { t.join().unwrap(); }
-                } else {
+                if !par {
+                    let i = argmin_k;
+                    o.cover(i);
                     let mut xl = i as u16;
                     while {xl = o.dlink[xl as usize] as u16; xl as usize != i} {
                         try_xl(o, x, results, xl, l);
                     }
+                    o.uncover(i);
+                } else {
+                    let i = argmax_k;
+                    o.cover(i);
+                    let mut xl = i as u16;
+                    let a = o.top[i];
+                    let queue = Arc::new(ArrayQueue::new(a as usize));
+                    while {xl = o.dlink[xl as usize] as u16; xl as usize != i} {
+                        queue.push(xl).unwrap();
+                    }
+
+                    let mut threads = Vec::with_capacity(nthreads);
+                    for _ in 0..nthreads {
+                        let mut o = o.clone();
+                        let mut x = x.clone();
+                        let queue = queue.clone();
+                        let results = results.clone();
+                        threads.push(thread::spawn(move || {
+                            while let Some(xl) = queue.pop() {
+                                try_xl(&mut o,&mut x,&results,xl,l);
+                            }
+                        }));
+                    }
+                    for t in threads { t.join().unwrap(); }
+                    o.uncover(i);
                 }
-                o.uncover(i);
             }
         }
         
         recurse(self, &results, &mut x, 0, true);
-        Arc::try_unwrap(results).unwrap().into_iter().collect()
+        Arc::try_unwrap(results).unwrap()
     }
 }
 
@@ -364,9 +371,9 @@ pub fn init_dancing_links(wb: &Vec<WordBits>) -> DancingLinks {
     d
 }
 
-pub fn fmt_solutions(words: &Vec<String>, solutions: Vec<[u16;5]>) -> String {
+pub fn fmt_solutions(words: &Vec<String>, solutions: Box<dyn Iterator<Item=[u16;5]>>) -> String {
     Itertools::intersperse(
-        solutions.iter().map(|solution| {
+        solutions.map(|solution| {
             Itertools::intersperse(
                 solution.iter()
                 .map(|i| words[*i as usize].clone()),
