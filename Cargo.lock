@@ -285,6 +285,7 @@ dependencies = [
  "clap 3.2.16",
  "criterion",
  "crossbeam",
+ "crossbeam-utils",
  "get-size",
  "itertools",
  "kdam",

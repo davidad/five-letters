@@ -1,8 +1,11 @@
 use bitvec::prelude::*;
-use crossbeam::queue::{ArrayQueue, SegQueue};
+use crossbeam::deque::{Injector, Worker, Stealer};
+use crossbeam_utils::thread;
+use crossbeam::queue::{SegQueue};
 use get_size::GetSize;
 use itertools::{*, EitherOrBoth::*};
-use std::{fs::File, io::{BufRead, BufReader}, sync::Arc, thread};
+use std::{fs::File, io::{BufRead, BufReader}, sync::Arc};
+use std::thread::available_parallelism;
 use kdam::prelude::*;
 
 type WordBits = BitArray<[u32;1],Msb0>;
@@ -246,7 +249,7 @@ impl DancingLinks {
             let mut c = 0;
             let mut nthreads : usize = 0;
             if par {
-                nthreads = thread::available_parallelism().map(|i| i.into()).unwrap_or(8);
+                nthreads = available_parallelism().map(|i| i.into()).unwrap_or(8);
             }
             while {c = o.rlink[c] as usize; c > 0} {
                 n_cols += 1;
@@ -319,24 +322,42 @@ impl DancingLinks {
                     o.cover(i);
                     let mut xl = i as u16;
                     let a = o.top[i];
-                    let queue = Arc::new(ArrayQueue::new(a as usize));
-                    while {xl = o.dlink[xl as usize] as u16; xl as usize != i} {
-                        queue.push(xl).unwrap();
-                    }
-
-                    let mut threads = Vec::with_capacity(nthreads);
-                    for _ in 0..nthreads {
-                        let mut o = o.clone();
-                        let mut x = x.clone();
-                        let queue = queue.clone();
-                        let results = results.clone();
-                        threads.push(thread::spawn(move || {
-                            while let Some(xl) = queue.pop() {
-                                try_xl(&mut o,&mut x,&results,xl,l);
-                            }
-                        }));
-                    }
-                    for t in threads { t.join().unwrap(); }
+                    let o_ref : &DancingLinks = o;
+                    thread::scope(|s| {
+                        let queue = Arc::new(Injector::new());
+                        while {xl = o.dlink[xl as usize] as u16; xl as usize != i} {
+                            queue.push(xl);
+                        }
+                        let mut stealers : Vec<Stealer<_>> = Vec::with_capacity(nthreads);
+                        let mut locals : Vec<_> = Vec::with_capacity(nthreads);
+                        for i in 0..nthreads {
+                            locals.push(Worker::new_fifo());
+                            stealers.push(locals[i].stealer());
+                        }
+                        let stealers : Arc<_> = Arc::new(stealers);
+                        for i in 0..nthreads {
+                            let mut x = x.clone();
+                            let results = results.clone();
+                            let queue = queue.clone();
+                            let stealers = stealers.clone();
+                            let local = locals.pop().unwrap();
+                            s.spawn(move |_| {
+                                let mut o = o_ref.clone();
+                                while let Some(xl) = {
+                                    local.pop().or_else(|| {
+                                        std::iter::repeat_with(|| {
+                                            queue.steal_batch_and_pop(&local)
+                                                .or_else(|| stealers.iter().map(|s| s.steal()).collect())
+                                        })
+                                        .find(|s| !s.is_retry())
+                                        .and_then(|s| s.success())
+                                    })
+                                } {
+                                    try_xl(&mut o,&mut x,&results,xl,l);
+                                }
+                            });
+                        }
+                    }).unwrap();
                     o.uncover(i);
                 }
             }
